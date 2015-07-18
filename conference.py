@@ -864,7 +864,7 @@ class ConferenceApi(remote.Service):
             formatted_query = ndb.query.FilterNode("duration", "<=", 60)
             confsessions = q.filter(formatted_query).fetch()
             if confsessions is not None:
-                sessions.append(confsessions)
+                sessions.extend(confsessions)
 
         # return set of SessionForm objects per Session
         return SessionForms(items=[self._copySessionToForm(session) for session in sessions])
