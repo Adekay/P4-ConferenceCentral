@@ -680,7 +680,10 @@ class ConferenceApi(remote.Service):
 
         s = SessionForm()
         for field in s.all_fields():
-            if hasattr(session, field.name):
+            # convert Date to date string; just copy others
+            if (field.name == "date" or field.name == "startTime"):
+                setattr(s, field.name, str(getattr(session, field.name)))
+            elif hasattr(session, field.name):
                 setattr(s, field.name, getattr(session, field.name))
             elif field.name == "websafeKey":
                 setattr(s, field.name, sessionUrlSafeKey)
@@ -779,12 +782,14 @@ class ConferenceApi(remote.Service):
             if request.typeOfSession:
                 session.typeOfSession = request.typeOfSession
             if request.date:
-                session.date = request.date
+                session.date = datetime.strptime(request.date, "%Y-%m-%d").date()
             if request.startTime:
-                session.startTime = request.startTime
+                session.startTime = datetime.strptime(request.startTime, "%H:%M:%S").time()
             session.put()
 
-        self._cacheFeaturedSpeaker(session.speakerId)
+        taskqueue.add(params={'confKey': request.websafeConferenceKey, 'sessionKey': session.key.urlsafe(), 'speakerId': request.speakerId},
+            url='/tasks/set_feature_speaker'
+        )
 
         return self._copySessionToForm(session)
 
@@ -887,19 +892,21 @@ class ConferenceApi(remote.Service):
 
 # - - - Featured Speaker - - - - - - - - - - - - - - - - - - - -
 
+
+
     @staticmethod
-    def _cacheFeaturedSpeaker(speakerKey):
+    def _cacheFeaturedSpeaker(confKey, sessionKey, speakerId):
         """Create featured speaker & assign to memcache"""
 
-        speaker = ndb.Key(urlsafe=speakerKey).get()
+        # create ancestor query for all sessions matching this conf
+        q = Session.query(ancestor=ndb.Key(Conference, confKey))
+        formatted_query = ndb.query.FilterNode("speakerId", "=", speakerId)
+        sessions = q.filter(formatted_query).fetch()
 
-        sessions = Session.query(Session.speakerId == speakerKey)
-        numSessions = sessions.count()
-
-        if sessions:
-            if numSessions > 1:
-                message = FEATURED_SPEAKER_MSG % (speaker.name, ', '.join(session.name for session in sessions))
-                memcache.set(MEMCACHE_FEATURED_SPEAKER, message)
+        speaker = ndb.Key(urlsafe=speakerId).get()
+        if sessions and len(sessions) > 1:
+            message = FEATURED_SPEAKER_MSG % (speaker.name, ', '.join(session.name for session in sessions))
+            memcache.set(MEMCACHE_FEATURED_SPEAKER, message)
 
 
     @endpoints.method(message_types.VoidMessage, StringMessage,
@@ -908,6 +915,7 @@ class ConferenceApi(remote.Service):
     def getFeaturedSpeaker(self, request):
         """Return featuered speaker from memcache."""
         return StringMessage(data=memcache.get(MEMCACHE_FEATURED_SPEAKER) or "")
+
 
 
 api = endpoints.api_server([ConferenceApi]) # register API

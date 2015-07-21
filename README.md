@@ -32,5 +32,14 @@ Query 2 (_getUsersForConference) :
 Returns a list of all the user profiles of the users attending a conference. This could be useful for the conference organizers to see the full list of attendees, and for the users to see who else is attending that they know.
 
 Query Problem :
-To get the sessions that are not workshops is easy. Simply need to query Session where typeOfSession != "Workshop". The problem lies with eliminating the ones that go past 7pm since we only have the start time as field, not the end time. We do have the duration, but that is not sufficient since it would require adding the duration to the start time in the query, which does not work with datastore's method of indexing data. 
-The solution would be to add an endtime field to the Session object. Then we could query the Sessions that are not workshops and that starttime < 7pm and endtime is < 7pm.
+
+Problem :
+There are two problems with this query. 
+1) We need to filter on two properties using inequality filters, however Datastore only allows inequality filters on one property per query.
+2) Our Session object does not include an endtime, so we can't easily determine if a session ends after 7pm.
+
+Solution :
+1) Add an endtime property to the Session object
+2) Define a strict list of possible values for typeOfSession
+3) Using the list of possible typeOfSession values, apply an equality IN filter on the typeOfSession for all the possible values, except for Workshop.
+4) Add an additional inequality filter on the endtime property where the value is < 7pm.
